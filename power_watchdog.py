@@ -227,3 +227,4 @@ class PowerWatchdog:
 
 
 power_watchdog = PowerWatchdog()
+

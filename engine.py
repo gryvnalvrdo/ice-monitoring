@@ -134,7 +134,7 @@ class IceDetectionEngine:
                 tid = truck_event.get('truck_id', 'UNKNOWN')
                 raw = truck_event.get('truck_raw', '')
                 self.start_session(truck_id=tid, truck_raw=raw)
-            elif ev_name == 'truck_departed':
+            elif ev_name in ('truck_left', 'truck_departed'):
                 self.close_session()
 
         # Update jika OCR baru berhasil mengenali plat di tengah jalan
