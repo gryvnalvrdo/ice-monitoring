@@ -2,7 +2,8 @@ import sqlite3
 import os
 import logging
 from datetime import datetime, date
-from config import DB_PATH, DEFAULT_CITY
+import config
+from config import DB_PATH, DEFAULT_CITY, BRANCH_CODE
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ def init_db():
     logger.info(f"Database siap: {DB_PATH}")
 
 
-def create_session(truck_id: str, truck_raw_ocr: str, city: str = DEFAULT_CITY) -> int:
+def create_session(truck_id: str, truck_raw_ocr: str, city: str = DEFAULT_CITY, branch_code: str = BRANCH_CODE) -> int:
     init_db()
     conn = get_connection()
     cur = conn.cursor()
@@ -140,10 +141,10 @@ def create_session(truck_id: str, truck_raw_ocr: str, city: str = DEFAULT_CITY) 
 
     cur.execute("""
         INSERT INTO sessions (
-            city, truck_id, truck_raw_ocr, trip_date, trip_number, start_time, status
+            city, branch_code, truck_id, truck_raw_ocr, trip_date, trip_number, start_time, status
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'ongoing')
-    """, (city, truck_id, truck_raw_ocr, today_str, trip_number, now_iso))
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'ongoing')
+    """, (city, branch_code, truck_id, truck_raw_ocr, today_str, trip_number, now_iso))
 
     session_id = cur.lastrowid
     conn.commit()
@@ -200,16 +201,17 @@ def log_package(session_id: int, size: str, area_px: int, frame_idx: int = 0,
 
 
 def log_anomaly(session_id: int, frame_idx: int, anomaly_type: str,
-                status: str = 'PENDING', video_clip_path: str = '', details: str = '') -> int:
+                status: str = 'PENDING', video_clip_path: str = '', details: str = '',
+                city: str = DEFAULT_CITY, branch_code: str = BRANCH_CODE) -> int:
     conn = get_connection()
     cur = conn.cursor()
     now = datetime.now().isoformat(timespec='seconds')
     cur.execute("""
         INSERT INTO anomalies (
-            session_id, timestamp, frame_idx, anomaly_type, status, video_clip_path, details
+            session_id, timestamp, frame_idx, anomaly_type, status, video_clip_path, details, city, branch_code
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (session_id, now, frame_idx, anomaly_type, status, video_clip_path, details))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (session_id, now, frame_idx, anomaly_type, status, video_clip_path, details, city, branch_code))
     anomaly_id = cur.lastrowid
     conn.commit()
     conn.close()
