@@ -117,3 +117,4 @@ python test_server_api.py
 
 ---
 *Dikembangkan dengan standar industri SOTA untuk operasional 24/7 di seluruh pabrik es di Indonesia.*
+

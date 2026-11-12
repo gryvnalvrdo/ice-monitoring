@@ -1,5 +1,10 @@
 import os
 import json
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Profil Cabang Pabrik (Multi-Branch Support)
 # Otomatis dimuat dari data/branch_profile.json jika cabang baru disetup
@@ -89,11 +94,11 @@ SNAPSHOT_DIR = "data/snapshots"
 DB_PATH = "data/sessions.db"
 
 # Cloud Database & Sync (Supabase / Managed PostgreSQL)
-CLOUD_SYNC_ENABLED = os.getenv("CLOUD_SYNC_ENABLED", "False").lower() in ("true", "1")
-CLOUD_DATABASE_URL = os.getenv("CLOUD_DATABASE_URL", "")  # e.g. postgresql://postgres:password@db.supabase.co:5432/postgres
-CLOUD_SUPABASE_URL = os.getenv("CLOUD_SUPABASE_URL", "")  # e.g. https://xyzcompany.supabase.co
-CLOUD_SUPABASE_KEY = os.getenv("CLOUD_SUPABASE_KEY", "")  # Supabase Anon/Service Key
-CLOUD_SYNC_INTERVAL_SEC = 10  # Interval sinkronisasi background (detik)
+CLOUD_SYNC_ENABLED = os.getenv("CLOUD_SYNC_ENABLED", "True").lower() in ("true", "1")
+CLOUD_DATABASE_URL = os.getenv("CLOUD_DATABASE_URL", "")  # Dimuat dari .env (postgresql://postgres:password@...)
+CLOUD_SUPABASE_URL = os.getenv("CLOUD_SUPABASE_URL", "https://czfpkrwvgwrcvkbbnxhx.supabase.co")
+CLOUD_SUPABASE_KEY = os.getenv("CLOUD_SUPABASE_KEY", "sb_publishable_AdZMG8QDH_HeuJEIdjDX-g_-hO_GQbM")
+CLOUD_SYNC_INTERVAL_SEC = int(os.getenv("CLOUD_SYNC_INTERVAL_SEC", "10"))
 
 LOG_DIR = "data/logs"
 LOG_LEVEL = "INFO"
