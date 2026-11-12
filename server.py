@@ -18,6 +18,7 @@ from hardware import hardware
 from stream_manager import RTSPStreamManager
 from cloud_sync import cloud_sync
 from engine import IceDetectionEngine
+from power_watchdog import power_watchdog
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server")
@@ -231,11 +232,17 @@ def on_startup():
     os.makedirs(config.EVIDENCE_DIR, exist_ok=True)
     if cloud_sync.is_enabled:
         cloud_sync.start()
+
+    # Periksa pemulihan mati listrik mendadak & aktifkan heartbeat
+    power_watchdog.check_recovery_on_boot(cloud_sync_mgr=cloud_sync)
+    power_watchdog.start_heartbeat()
+
     logger.info("Server FastAPI siap di port 8000.")
 
 
 @app.on_event("shutdown")
 def on_shutdown():
+    power_watchdog.stop_heartbeat(clean_shutdown=True)
     cloud_sync.stop()
     engine = get_or_create_engine()
     if engine:
@@ -487,6 +494,25 @@ def simulate_incident(incident_type: str = "recovered", _: bool = Depends(verify
         }
 
 
+@app.post("/api/engine/simulate_power_outage")
+def api_simulate_power_outage(downtime_minutes: int = 15, _: bool = Depends(verify_api_key)):
+    """
+    Simulasikan deteksi mati listrik mendadak (sudden blackout) dan auto-recovery:
+    - Menghitung durasi pemadaman listrik secara presisi
+    - Mencatat insiden ke SQLite lokal & Supabase Cloud
+    - Memicu notifikasi darurat Telegram
+    """
+    if not _check_rate_limit("simulate"):
+        raise HTTPException(status_code=429, detail="Terlalu banyak permintaan simulasi. Coba lagi nanti.")
+
+    res = power_watchdog.simulate_power_outage(downtime_minutes=downtime_minutes, cloud_sync_mgr=cloud_sync)
+    engine = get_or_create_engine()
+    engine._update_telemetry(
+        last_event=f"⚡ Listrik mati ({res['downtime']}) pulih kembali!"
+    )
+    return res
+
+
 # ===================== WEBSOCKET REAL-TIME =====================
 
 @app.websocket("/ws/telemetry")
@@ -673,6 +699,14 @@ def index_page():
               </div>
               <p class="text-[11px] text-slate-400 mt-1">Es dibawa keluar dan tidak pernah masuk truk. Merekam video 10s + kirim alert Telegram.</p>
             </button>
+
+            <button onclick="simulatePowerOutage()" class="w-full text-left p-3 rounded-xl bg-slate-900/80 hover:bg-slate-900 border border-amber-500/30 transition group">
+              <div class="text-xs font-bold text-amber-400 flex items-center justify-between">
+                <span>3. ⚡ Mati Listrik & Pemulihan</span>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-amber-500/20">Blackout</span>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-1">Simulasi pemadaman listrik mendadak pabrik. Hitung durasi padam + kirim trigger Telegram & Supabase.</p>
+            </button>
           </div>
         </div>
 
@@ -849,6 +883,13 @@ def index_page():
       const res = await fetch(`/api/engine/simulate_incident?incident_type=${type}`, {method: 'POST'});
       const data = await res.json();
       alert(data.message);
+      refreshData();
+    }
+
+    async function simulatePowerOutage() {
+      const res = await fetch(`/api/engine/simulate_power_outage?downtime_minutes=15`, {method: 'POST'});
+      const data = await res.json();
+      alert(`[MATI LISTRIK] ${data.details}`);
       refreshData();
     }
 

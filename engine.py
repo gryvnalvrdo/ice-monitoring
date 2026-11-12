@@ -347,27 +347,71 @@ class IceDetectionEngine:
     def _on_stream_disconnect(self):
         logger.warning("[ENGINE] Stream RTSP terputus!")
         self._update_telemetry(stream_status='DISCONNECTED', last_event="⚠️ Stream kamera terputus / CCTV mati!")
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         # Catat insiden putusnya CCTV ke database sebagai anomali pengawasan
-        if self.current_session_id:
-            database.log_anomaly(
-                session_id=self.current_session_id,
-                frame_idx=self.frame_idx,
-                anomaly_type="CAMERA_DISCONNECTED",
-                status="CONFIRMED_THEFT",
-                details="Koneksi CCTV terputus (mati lampu atau kabel dicabut) saat sesi loading masih berjalan!"
-            )
+        database.log_anomaly(
+            session_id=self.current_session_id,
+            frame_idx=self.frame_idx,
+            anomaly_type="CAMERA_DISCONNECTED",
+            status="CONFIRMED_THEFT",
+            details="Koneksi CCTV terputus mendadak (mati lampu kamera atau kabel dicabut) saat sistem aktif!",
+            city=self.city,
+            branch_code=self.branch_code
+        )
+
+        # Trigger Notifikasi Telegram Darurat
+        self.telegram.send_alert_async(
+            title="⚠️ ALIRAN CCTV TERPUTUS / LISTRIK KAMERA PADAM",
+            details={
+                'city': self.city,
+                'branch_code': self.branch_code,
+                'truck_id': self.current_truck_id or "-",
+                'trip_number': self.current_trip_number,
+                'timestamp': now_str,
+                'status': 'CCTV OFFLINE (DISCONNECTED)',
+                'message': (
+                    f"⚠️ PERINGATAN DARURAT CCTV PABRIK:\n"
+                    f"Koneksi stream kamera di cabang {self.city} ({self.branch_code}) terputus mendadak pada {now_str}.\n\n"
+                    f"• Dugaan Penyebab: Listrik kamera mati, adaptor rusak, atau kabel CCTV dicabut.\n"
+                    f"• Status Truk     : #{self.current_truck_id or 'Tidak ada sesi'}\n\n"
+                    f"Petugas keamanan harap segera memeriksa kamera di lokasi!"
+                )
+            }
+        )
 
     def _on_stream_reconnect(self):
         logger.info("[ENGINE] Stream RTSP tersambung kembali.")
         self._update_telemetry(stream_status='CONNECTED', tamper_status='NORMAL', last_event="Stream kamera kembali normal.")
-        if self.current_session_id:
-            database.log_anomaly(
-                session_id=self.current_session_id,
-                frame_idx=self.frame_idx,
-                anomaly_type="CAMERA_RECONNECTED",
-                status="RECOVERED_TO_TRUCK",
-                details="Koneksi CCTV berhasil pulih kembali secara otomatis."
-            )
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        database.log_anomaly(
+            session_id=self.current_session_id,
+            frame_idx=self.frame_idx,
+            anomaly_type="CAMERA_RECONNECTED",
+            status="POWER_RESTORED",
+            details="Koneksi CCTV berhasil pulih kembali secara otomatis. Aliran video normal.",
+            city=self.city,
+            branch_code=self.branch_code
+        )
+
+        # Trigger Notifikasi Telegram Pemulihan
+        self.telegram.send_alert_async(
+            title="✅ ALIRAN CCTV PULIH / LISTRIK KAMERA NYALA",
+            details={
+                'city': self.city,
+                'branch_code': self.branch_code,
+                'truck_id': self.current_truck_id or "-",
+                'trip_number': self.current_trip_number,
+                'timestamp': now_str,
+                'status': 'CCTV ONLINE (RESTORED)',
+                'message': (
+                    f"✅ CCTV PABRIK KEMBALI NORMAL:\n"
+                    f"Koneksi kamera di cabang {self.city} ({self.branch_code}) telah berhasil tersambung kembali pada {now_str}.\n"
+                    f"Pengawasan AI dan pencatatan es dilanjutkan otomatis."
+                )
+            }
+        )
 
     def _update_telemetry(self, **kwargs):
         for k, v in kwargs.items():

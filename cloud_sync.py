@@ -113,8 +113,10 @@ class CloudSyncManager:
             # 2. Sinkronkan anomali & rekaman bukti pencurian (Hanya insiden nyata terkonfirmasi / mati lampu / sabotase)
             cur.execute("""
                 SELECT * FROM anomalies 
-                WHERE status = 'CONFIRMED_THEFT' 
-                   OR anomaly_type IN ('CAMERA_DISCONNECTED', 'CAMERA_RECONNECTED', 'CAMERA_TAMPERED')
+                WHERE status IN ('CONFIRMED_THEFT', 'POWER_RESTORED', 'RESOLVED')
+                   OR anomaly_type LIKE 'CAMERA_%'
+                   OR anomaly_type LIKE 'POWER_%'
+                   OR anomaly_type LIKE 'SYSTEM_%'
                 ORDER BY id DESC LIMIT 50
             """)
             recent_anomalies = [dict(r) for r in cur.fetchall()]
