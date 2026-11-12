@@ -1,0 +1,35 @@
+# Large Video Files (Melebihi batas GitHub 100MB)
+*.mp4
+*.avi
+*.mkv
+*.mov
+
+# Runtime Data, Evidence, Database & Cache
+data/*
+!data/.gitkeep
+!data/branch_profile.json
+
+# Dataset Raw Extracted Frames (Besar > 600MB)
+dataset/extracted_frames/
+dataset/extracted_video1/
+dataset/yolo_ice/images/
+dataset/yolo_ice/labels/
+
+# Temporary Scratch Audit Images (Keep scripts and ground truth text)
+scratch/*/*.jpg
+scratch/*/*.png
+!scratch/gt_audit/events.txt
+
+# YOLO Training Runs Cache
+runs/detect/runs/train/ice_detector/weights/last.pt
+
+# Python Bytecode & Logs
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# IDE & Config
+.vscode/
+.idea/
+.env
