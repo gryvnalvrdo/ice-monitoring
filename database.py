@@ -248,7 +248,16 @@ def update_anomaly(anomaly_id: int, status: str = None, video_clip_path: str = N
     conn.close()
 
 
-def close_session(session_id: int) -> dict:
+def delete_anomaly(anomaly_id: int):
+    """Hapus entri anomali (misal ketika false positive teratasi dan tidak perlu dicatat)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM anomalies WHERE id = ?", (anomaly_id,))
+    conn.commit()
+    conn.close()
+
+
+def close_session(session_id: int, duration_sec: int = None) -> dict:
     conn = get_connection()
     cur = conn.cursor()
     now_dt = datetime.now()
@@ -260,11 +269,14 @@ def close_session(session_id: int) -> dict:
         conn.close()
         return {}
 
-    try:
-        start_dt = datetime.fromisoformat(row['start_time'])
-        duration = int((now_dt - start_dt).total_seconds())
-    except Exception:
-        duration = 0
+    if duration_sec is None:
+        try:
+            start_dt = datetime.fromisoformat(row['start_time'])
+            duration = int((now_dt - start_dt).total_seconds())
+        except Exception:
+            duration = 0
+    else:
+        duration = int(duration_sec)
 
     cur.execute("""
         UPDATE sessions

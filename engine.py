@@ -108,9 +108,9 @@ class IceDetectionEngine:
             f"Kota={self.city}, ID={self.current_session_id}"
         )
 
-    def close_session(self):
+    def close_session(self, duration_sec: int = None):
         if self.current_session_id:
-            summary = database.close_session(self.current_session_id)
+            summary = database.close_session(self.current_session_id, duration_sec=duration_sec)
             logger.info(f"[ENGINE] Sesi ditutup untuk Truk {self.current_truck_id}")
             self._update_telemetry(
                 truck_present=False,
@@ -233,11 +233,8 @@ class IceDetectionEngine:
                     f"BERHASIL KEMBALI MASUK TRUK! Alarm dibatalkan (False Positive diatasi)."
                 )
                 if anom_id:
-                    database.update_anomaly(
-                        anomaly_id=anom_id,
-                        status="RECOVERED_TO_TRUCK",
-                        details=f"Objek sempat ke samping {p_info['side']} lalu dikembalikan masuk ke truk"
-                    )
+                    # Hapus dari tabel anomali karena ini false alarm (bukan pencurian nyata)
+                    database.delete_anomaly(anom_id)
                 self._update_telemetry(
                     last_event="Es samping kembali masuk bak (False Alarm dihindari)"
                 )

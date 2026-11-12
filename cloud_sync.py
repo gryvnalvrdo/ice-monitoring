@@ -110,8 +110,13 @@ class CloudSyncManager:
                 if success:
                     synced_sessions = len(recent_sessions)
 
-            # 2. Sinkronkan anomali & rekaman bukti pencurian (50 terbaru agar update status PENDING -> RECOVERED tersinkron)
-            cur.execute("SELECT * FROM anomalies ORDER BY id DESC LIMIT 50")
+            # 2. Sinkronkan anomali & rekaman bukti pencurian (Hanya insiden nyata terkonfirmasi / mati lampu / sabotase)
+            cur.execute("""
+                SELECT * FROM anomalies 
+                WHERE status = 'CONFIRMED_THEFT' 
+                   OR anomaly_type IN ('CAMERA_DISCONNECTED', 'CAMERA_RECONNECTED', 'CAMERA_TAMPERED')
+                ORDER BY id DESC LIMIT 50
+            """)
             recent_anomalies = [dict(r) for r in cur.fetchall()]
 
             if recent_anomalies:
