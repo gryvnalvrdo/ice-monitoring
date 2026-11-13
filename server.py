@@ -27,28 +27,23 @@ app = FastAPI(title="Sistem Monitoring Loading Es Kristal", version="2.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=config.CORS_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
 
-# Engine singleton & worker thread
 global_engine: Optional[IceDetectionEngine] = None
 engine_thread: Optional[threading.Thread] = None
 is_engine_active = False
 
-# Active WebSocket connections
 ws_clients = set()
 
-# In-Memory Rate Limiter (IP / Action based)
 _rate_limit_counters: dict = defaultdict(list)
-RATE_LIMIT_MAX = 15       # Max 15 requests
-RATE_LIMIT_WINDOW = 60.0  # per 60 seconds
+RATE_LIMIT_MAX = 15
+RATE_LIMIT_WINDOW = 60.0
 
 def _check_rate_limit(action_key: str = "global") -> bool:
-    """
-    return html.replace("__CITY__", city_label).replace("__BRANCH__", branch_code)Mengembalikan True jika request diizinkan, False jika terkena rate-limit."""
     now = time.time()
     window_start = now - RATE_LIMIT_WINDOW
     hits = _rate_limit_counters[action_key]
@@ -58,7 +53,6 @@ def _check_rate_limit(action_key: str = "global") -> bool:
     _rate_limit_counters[action_key].append(now)
     return True
 
-
 def get_or_create_engine() -> IceDetectionEngine:
     global global_engine
     if global_engine is None:
@@ -67,7 +61,6 @@ def get_or_create_engine() -> IceDetectionEngine:
             city=config.DEFAULT_CITY
         )
     return global_engine
-
 
 def background_engine_worker(source_path: str, start_minute: float = 28.5, max_frames: int = 0):
     global is_engine_active, global_engine
@@ -81,7 +74,6 @@ def background_engine_worker(source_path: str, start_minute: float = 28.5, max_f
     hw_stride = hardware.hardware_info.get('recommended_stride', 1)
     is_rtsp = str(source_path).lower().startswith("rtsp://") or str(source_path).lower().startswith("http://")
 
-    # Ambil status disk awal
     try:
         d_init = security_manager.check_and_prune_disk()
         engine._update_telemetry(disk_free_gb=d_init['free_gb'])
@@ -89,7 +81,7 @@ def background_engine_worker(source_path: str, start_minute: float = 28.5, max_f
         pass
 
     if not is_rtsp:
-        # MODE 1: FILE VIDEO OFFLINE / REKAMAN TESTING (cv2 seek)
+
         cap = cv2.VideoCapture(source_path)
         fps = cap.get(cv2.CAP_PROP_FPS) or 10.0
         start_frame = int(start_minute * 60 * fps)
@@ -110,7 +102,6 @@ def background_engine_worker(source_path: str, start_minute: float = 28.5, max_f
                 logger.info("[WORKER] Akhir video atau stream selesai.")
                 break
 
-            # CPU mode stride check
             if hw_stride > 1 and f_count % hw_stride != 0:
                 f_count += 1
                 continue
@@ -121,13 +112,11 @@ def background_engine_worker(source_path: str, start_minute: float = 28.5, max_f
 
             processed_frame, events = engine.process_frame(frame)
 
-            # Hitung realtime FPS
             elapsed = time.time() - t0
             engine.fps = f_count / elapsed if elapsed > 0 else fps
             engine.telemetry['fps'] = round(engine.fps, 1)
             engine.telemetry['frame_idx'] = engine.frame_idx
 
-            # Auto disk prune setiap 200 frame
             if disk_check_counter >= 200:
                 disk_check_counter = 0
                 try:
@@ -136,7 +125,6 @@ def background_engine_worker(source_path: str, start_minute: float = 28.5, max_f
                 except Exception as e:
                     logger.error(f"[WORKER] Error disk check: {e}")
 
-            # Flush offline queue telegram setiap 300 frame
             if telegram_flush_counter >= 300:
                 telegram_flush_counter = 0
                 try:
@@ -144,7 +132,6 @@ def background_engine_worker(source_path: str, start_minute: float = 28.5, max_f
                 except Exception as e:
                     logger.error(f"[WORKER] Error telegram flush: {e}")
 
-            # Throttle ringan agar menyerupai kecepatan CCTV asli
             time.sleep(max(0.01, (1.0 / fps) * 0.3))
 
             if max_frames > 0 and f_count >= max_frames:
@@ -153,7 +140,7 @@ def background_engine_worker(source_path: str, start_minute: float = 28.5, max_f
         cap.release()
 
     else:
-        # MODE 2: LIVE RTSP / CCTV REAL-TIME STREAM (RTSPStreamManager Resilient)
+
         stream = RTSPStreamManager(
             source=source_path,
             fps_target=10.0,
@@ -223,9 +210,6 @@ def background_engine_worker(source_path: str, start_minute: float = 28.5, max_f
     engine._update_telemetry(stream_status='IDLE')
     logger.info("[WORKER] Background worker selesai.")
 
-
-# ===================== REST API ENDPOINTS =====================
-
 @app.on_event("startup")
 def on_startup():
     database.init_db()
@@ -233,12 +217,10 @@ def on_startup():
     if cloud_sync.is_enabled:
         cloud_sync.start()
 
-    # Periksa pemulihan mati listrik mendadak & aktifkan heartbeat
     power_watchdog.check_recovery_on_boot(cloud_sync_mgr=cloud_sync)
     power_watchdog.start_heartbeat()
 
     logger.info("Server FastAPI siap di port 8000.")
-
 
 @app.on_event("shutdown")
 def on_shutdown():
@@ -268,17 +250,8 @@ def on_shutdown():
             logger.error(f"[SHUTDOWN] Error saat logging shutdown: {e}")
     logger.info("Server FastAPI dihentikan.")
 
-
 @app.get("/api/overview")
 def get_overview(city: str = config.DEFAULT_CITY, date: Optional[str] = None):
-    """
-    Ringkasan dashboard hari ini untuk kota tertentu:
-    - Total truk berangkat
-    - Total trip
-    - Total es besar & kecil
-    - List trip hari ini
-    - List anomali
-    """
     summary = database.get_daily_summary(city=city, target_date=date)
     engine = get_or_create_engine()
     return {
@@ -289,11 +262,9 @@ def get_overview(city: str = config.DEFAULT_CITY, date: Optional[str] = None):
         'live_telemetry': engine.telemetry
     }
 
-
 @app.get("/api/trips")
 def list_trips(city: Optional[str] = None, date: Optional[str] = None, truck_id: Optional[str] = None):
     return database.get_all_sessions(city=city, target_date=date, truck_id=truck_id)
-
 
 @app.get("/api/trips/{trip_id}")
 def get_trip_detail(trip_id: int):
@@ -302,21 +273,19 @@ def get_trip_detail(trip_id: int):
         raise HTTPException(status_code=404, detail="Trip tidak ditemukan")
     return detail
 
-
 @app.get("/api/anomalies")
 def list_anomalies(limit: int = 50):
+    limit = max(1, min(limit, 500))
     return database.get_anomalies(limit=limit)
-
 
 @app.get("/api/evidence/{filename}")
 def get_evidence_video(filename: str):
-    # Proteksi sanitasi path
+
     safe_name = os.path.basename(filename)
     path = os.path.join(config.EVIDENCE_DIR, safe_name)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File video bukti tidak ditemukan")
     return FileResponse(path, media_type="video/mp4")
-
 
 @app.get("/api/engine/status")
 def get_engine_status():
@@ -326,22 +295,16 @@ def get_engine_status():
         'telemetry': engine.telemetry
     }
 
-
 @app.get("/api/hardware/status")
 def get_hardware_status():
-    """Status hardware: GPU/CPU, VRAM, RAM, utilization real-time."""
     return hardware.get_summary()
-
 
 @app.get("/api/storage/status")
 def get_storage_status():
-    """Status penyimpanan disk dan auto-prune."""
     return security_manager.check_and_prune_disk()
-
 
 @app.get("/api/cloud/status")
 def get_cloud_status():
-    """Status sinkronisasi Cloud Database (Supabase / PostgreSQL)."""
     return {
         'is_enabled': cloud_sync.is_enabled,
         'sync_status': cloud_sync.sync_status,
@@ -349,36 +312,32 @@ def get_cloud_status():
         'synced_state': cloud_sync.state
     }
 
-
 @app.post("/api/cloud/sync")
-def trigger_cloud_sync():
-    """Trigger sinkronisasi manual ke cloud."""
+def trigger_cloud_sync(_: bool = Depends(verify_api_key)):
     return cloud_sync.sync_now()
-
 
 class StartEngineRequest(BaseModel):
     source: str = config.VIDEO_SOURCE
     start_minute: float = config.VIDEO_START_MINUTE
     max_frames: int = 0
 
-
 @app.post("/api/engine/start")
 def start_engine(req: StartEngineRequest, _: bool = Depends(verify_api_key)):
     global is_engine_active, engine_thread
 
-    # 1. Rate limiter
     if not _check_rate_limit("engine_start"):
         raise HTTPException(status_code=429, detail="Terlalu banyak permintaan start engine. Coba lagi nanti.")
 
-    # 2. Input validation & path sanitization
     src = req.source.strip()
     if not src.lower().startswith("rtsp://") and not src.lower().startswith("http://"):
-        try:
-            resolved = str(pathlib.Path(src).resolve())
-        except Exception:
-            raise HTTPException(status_code=400, detail="Path sumber video tidak valid.")
         if ".." in req.source:
             raise HTTPException(status_code=400, detail="Path traversal tidak diizinkan.")
+        if not os.path.exists(src) and os.path.exists(os.path.join("videos", src)):
+            src = os.path.join("videos", src)
+        try:
+            str(pathlib.Path(src).resolve())
+        except Exception:
+            raise HTTPException(status_code=400, detail="Path sumber video tidak valid.")
 
     if not (0.0 <= req.start_minute <= 300.0):
         raise HTTPException(status_code=400, detail="start_minute harus berada dalam rentang 0 hingga 300 menit.")
@@ -388,12 +347,11 @@ def start_engine(req: StartEngineRequest, _: bool = Depends(verify_api_key)):
 
     engine_thread = threading.Thread(
         target=background_engine_worker,
-        args=(req.source, req.start_minute, req.max_frames),
+        args=(src, req.start_minute, req.max_frames),
         daemon=True
     )
     engine_thread.start()
-    return {"status": "started", "source": req.source, "start_minute": req.start_minute}
-
+    return {"status": "started", "source": src, "start_minute": req.start_minute}
 
 @app.post("/api/engine/stop")
 def stop_engine(_: bool = Depends(verify_api_key)):
@@ -403,7 +361,7 @@ def stop_engine(_: bool = Depends(verify_api_key)):
     is_engine_active = False
 
     if was_active:
-        # Catat penghentian ke database
+
         try:
             database.log_anomaly(
                 session_id=engine.current_session_id or 1,
@@ -427,21 +385,15 @@ def stop_engine(_: bool = Depends(verify_api_key)):
 
     return {"status": "stopped", "message": "Perintah berhenti dikirim dan dicatat"}
 
-
 @app.post("/api/engine/simulate_incident")
 def simulate_incident(incident_type: str = "recovered", _: bool = Depends(verify_api_key)):
-    """
-    Endpoint uji coba untuk memverifikasi logika Anti-False-Positive:
-    - 'recovered': es keluar ke samping lalu berhasil masuk ke truk (False positive diatasi)
-    - 'theft': es keluar ke samping dan hilang / tidak masuk (Pencurian terkonfirmasi)
-    """
     if not _check_rate_limit("simulate"):
         raise HTTPException(status_code=429, detail="Terlalu banyak permintaan simulasi. Coba lagi nanti.")
 
     engine = get_or_create_engine()
 
     if incident_type == "recovered":
-        # Simulasikan false positive yang berhasil diatasi
+
         anom_id = database.log_anomaly(
             session_id=engine.current_session_id or 1,
             frame_idx=engine.frame_idx,
@@ -464,7 +416,7 @@ def simulate_incident(incident_type: str = "recovered", _: bool = Depends(verify
             "message": "Es keluar ke samping lalu masuk kembali ke truk. Sistem membatalkan alarm!"
         }
     else:
-        # Simulasikan pencurian terkonfirmasi
+
         anom_id = database.log_anomaly(
             session_id=engine.current_session_id or 1,
             frame_idx=engine.frame_idx,
@@ -476,7 +428,7 @@ def simulate_incident(incident_type: str = "recovered", _: bool = Depends(verify
             active_anomalies_count=engine.telemetry['active_anomalies_count'] + 1,
             last_event="🚨 Simulasi: Dugaan pencurian es ke samping terkonfirmasi!"
         )
-        # Kirim notifikasi Telegram jika token diset
+
         engine.telegram.send_alert_async(
             title="DUGAAN PENCURIAN ES TERDETEKSI (SIMULASI)",
             details={
@@ -493,15 +445,8 @@ def simulate_incident(incident_type: str = "recovered", _: bool = Depends(verify
             "message": "Pencurian terkonfirmasi! Alert Telegram dikirim dan dicatat ke database."
         }
 
-
 @app.post("/api/engine/simulate_power_outage")
 def api_simulate_power_outage(downtime_minutes: int = 15, _: bool = Depends(verify_api_key)):
-    """
-    Simulasikan deteksi mati listrik mendadak (sudden blackout) dan auto-recovery:
-    - Menghitung durasi pemadaman listrik secara presisi
-    - Mencatat insiden ke SQLite lokal & Supabase Cloud
-    - Memicu notifikasi darurat Telegram
-    """
     if not _check_rate_limit("simulate"):
         raise HTTPException(status_code=429, detail="Terlalu banyak permintaan simulasi. Coba lagi nanti.")
 
@@ -511,9 +456,6 @@ def api_simulate_power_outage(downtime_minutes: int = 15, _: bool = Depends(veri
         last_event=f"⚡ Listrik mati ({res['downtime']}) pulih kembali!"
     )
     return res
-
-
-# ===================== WEBSOCKET REAL-TIME =====================
 
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry(websocket: WebSocket):
@@ -529,9 +471,6 @@ async def websocket_telemetry(websocket: WebSocket):
     except Exception:
         if websocket in ws_clients:
             ws_clients.remove(websocket)
-
-
-# ===================== WEB DASHBOARD (HTML) =====================
 
 @app.get("/", response_class=HTMLResponse)
 def index_page():
@@ -609,7 +548,7 @@ def index_page():
 
     <!-- Live Telemetry & Control Banner -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      
+
       <!-- Live Monitoring Card -->
       <div class="lg:col-span-2 bg-slate-800/50 border border-slate-700 rounded-2xl p-5 shadow-lg">
         <div class="flex items-center justify-between pb-4 border-b border-slate-700/80">
@@ -801,7 +740,7 @@ def index_page():
       tbody.innerHTML = trips.map(t => {
         const durationMin = Math.round(t.duration_seconds / 60);
         const isDone = t.status === 'COMPLETED';
-        const statusBadge = isDone 
+        const statusBadge = isDone
           ? '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold">SELESAI</span>'
           : '<span class="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-400 font-semibold animate-pulse">LOADING</span>';
 
@@ -835,7 +774,7 @@ def index_page():
         if (isTheft) badge = '<span class="px-2 py-0.5 rounded text-[10px] bg-rose-500/20 text-rose-400 font-bold">🚨 THEFT / TAMPER</span>';
         if (isRecovered) badge = '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 font-bold">✅ RECOVERED (FALSE ALARM DITANGKAL)</span>';
 
-        const videoBtn = a.video_clip_path 
+        const videoBtn = a.video_clip_path
           ? `<a href="/api/evidence/${a.video_clip_path.split(/[\\\\/]/).pop()}" target="_blank" class="px-3 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-semibold transition">▶ Tonton Bukti Video</a>`
           : '';
 
@@ -859,10 +798,10 @@ def index_page():
       const btn = document.getElementById('btnEngine');
       if (!isRunning) {
         btn.textContent = "⏳ Memulai...";
-        const res = await fetch('/api/engine/start', {
+        const res = await adminFetch('/api/engine/start', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({source: 'XVR_ch3_main_20261022200001_20261022203800.mp4', start_minute: 28.5})
+          body: JSON.stringify({source: 'videos/XVR_ch3_main_20261022200001_20261022203800.mp4', start_minute: 28.5})
         });
         isRunning = true;
         btn.textContent = "⏹ Hentikan Deteksi";
@@ -870,7 +809,7 @@ def index_page():
         document.getElementById('engineBadge').textContent = "Processing (Active)";
         document.getElementById('engineBadge').className = "px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
       } else {
-        await fetch('/api/engine/stop', {method: 'POST'});
+        await adminFetch('/api/engine/stop', {method: 'POST'});
         isRunning = false;
         btn.textContent = "▶ Jalankan Deteksi";
         btn.className = "px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-900/30 transition flex items-center gap-2";
@@ -879,15 +818,28 @@ def index_page():
       }
     }
 
+    function apiHeaders(extra) {
+      let k = sessionStorage.getItem('apiKey');
+      if (!k) { k = prompt('Masukkan API Key admin:') || ''; sessionStorage.setItem('apiKey', k); }
+      return Object.assign({'X-API-Key': k}, extra || {});
+    }
+    async function adminFetch(url, opts) {
+      opts = opts || {};
+      opts.headers = apiHeaders(opts.headers);
+      const r = await fetch(url, opts);
+      if (r.status === 403 || r.status === 503) { sessionStorage.removeItem('apiKey'); alert('API Key salah / belum dikonfigurasi'); }
+      return r;
+    }
+
     async function simulateIncident(type) {
-      const res = await fetch(`/api/engine/simulate_incident?incident_type=${type}`, {method: 'POST'});
+      const res = await adminFetch(`/api/engine/simulate_incident?incident_type=${type}`, {method: 'POST'});
       const data = await res.json();
       alert(data.message);
       refreshData();
     }
 
     async function simulatePowerOutage() {
-      const res = await fetch(`/api/engine/simulate_power_outage?downtime_minutes=15`, {method: 'POST'});
+      const res = await adminFetch(`/api/engine/simulate_power_outage?downtime_minutes=15`, {method: 'POST'});
       const data = await res.json();
       alert(`[MATI LISTRIK] ${data.details}`);
       refreshData();
@@ -897,7 +849,7 @@ def index_page():
     function connectWS() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const ws = new WebSocket(`${protocol}//${window.location.host}/ws/telemetry`);
-      
+
       ws.onmessage = (event) => {
         const tel = JSON.parse(event.data);
         document.getElementById('liveTruck').textContent = tel.truck_id !== '-' ? `Truk ${tel.truck_id}` : '-';
@@ -908,7 +860,7 @@ def index_page():
         document.getElementById('liveLastEvent').textContent = tel.last_event;
         document.getElementById('liveLastTime').textContent = tel.last_event_time;
         document.getElementById('liveAnomalies').textContent = `${tel.active_anomalies_count} Insiden`;
-        
+
         if (tel.active_anomalies_count > 0) {
           document.getElementById('liveSecurityStatus').textContent = "WASPADA";
           document.getElementById('liveSecurityStatus').className = "text-xl font-bold text-rose-400 mt-1 animate-pulse";
@@ -961,7 +913,6 @@ def index_page():
 </html>
     """
     return html.replace("__CITY__", city_label).replace("__BRANCH__", branch_code)
-
 
 if __name__ == "__main__":
     import uvicorn

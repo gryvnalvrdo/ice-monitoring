@@ -33,3 +33,10 @@ __pycache__/
 .vscode/
 .idea/
 .env
+
+# Bobot/model eksperimen & scratch (jangan di-track)
+yolov8n.pt
+weights/yolo26n.pt
+runs/
+scratch/
+data/check_cluster*/
