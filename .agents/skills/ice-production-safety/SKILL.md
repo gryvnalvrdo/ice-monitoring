@@ -46,3 +46,30 @@ description: Checklist keamanan web, rahasia, pencegahan error/crash, dan keanda
 - `python -m pytest tests -q` wajib lulus semua.
 - Uji skenario kegagalan: CCTV dicabut & dicolok ulang, internet dimatikan 15 menit lalu nyala, disk disimulasikan penuh, dan API dipanggil tanpa/salah API key.
 - Uji soak minimal 72 jam memantau RAM, VRAM, FPS, thread count, dan stabilitas koneksi RTSP.
+
+## 4. Arsitektur Multi-Cabang Indonesia, Alur Deploy & Kebutuhan Hardware
+### Alur Paling Sederhana & Tahan Gangguan (*Edge-to-Cloud*)
+1. **Proses Video Tetap di Pabrik Cabang (Lokal):**
+   - Jangan mengirim stream mentah CCTV RTSP ke server cloud pusat untuk diproses AI (boros bandwidth internet, macet jika banyak cabang, dan berhenti bila internet mati).
+   - Tiap cabang menjalankan 1 PC/Mini-PC lokal yang terhubung LAN langsung ke CCTV/NVR cabang. Semua deteksi kantong es, alarm pencurian, dan penyimpanan awal ke SQLite lokal (`data/sessions.db`) berjalan mandiri 24/7 meski internet pabrik sempat padam.
+2. **Sinkronisasi Ringkas ke Cloud Pusat (Tiap 10 Detik):**
+   - `services/cloud_sync.py` mengirim hanya ringkasan angka sesi truk dan kejadian anomali (teks ringan beberapa KB, bukan video mentah) ke database pusat **Supabase / PostgreSQL** (`scripts/supabase_schema.sql`), dibedakan per cabang lewat `BRANCH_CODE` (mis. `MKS-01`, `SBY-01`) dan `BRANCH_CITY`.
+   - Video bukti pendek (10 detik, lebar maks `960px`) disimpan lokal (`data/evidence/`) dengan auto-hapus berdasarkan umur (`EVIDENCE_RETENTION_DAYS=30`, catatan DB tetap utuh) sekaligus dikirim ke **Telegram** sebagai salinan dan peringatan instan.
+3. **Web Dashboard Pusat & Akses Jarak Jauh:**
+   - **Portal Rekap Seluruh Cabang (Hosting Pusat):** Cukup jalankan web ringan di VPS/Cloud biasa (tanpa GPU) yang membaca database pusat Supabase untuk menampilkan rekap semua kota/cabang Indonesia dalam satu dashboard (filter cabang, tanggal, ekspor CSV, dan audit kejadian).
+   - **Akses Live CCTV Cabang Tertentu:** Jika kantor pusat sesekali ingin melihat live kamera atau mengatur cabang, hubungkan Mini-PC cabang lewat **Cloudflare Tunnel** atau **Tailscale VPN** + HTTPS ke `127.0.0.1:8000` (tanpa buka port router publik / tanpa perlu IP statis di pabrik).
+4. **Langkah Tambah Cabang Baru:**
+   - Siapkan Mini-PC di cabang + isi `.env` cabang (`BRANCH_CITY`, `BRANCH_CODE` unik, URL RTSP kamera, token Telegram, dan koneksi Supabase pusat yang sama, `ALLOW_SIMULATION=false`, `DISABLE_API_DOCS=true`).
+   - Jalankan `python scripts/setup_cabang_baru.py` untuk verifikasi profil & tes koneksi kamera, lalu aktifkan auto-start (`scripts/setup_autostart_windows.bat`).
+
+### Kebutuhan Hardware (Standar untuk Tim Pusat & Pengadaan)
+1. **Per Cabang Pabrik (Edge PC / Komputer Lokasi):**
+   - **Standar Hemat (1 Kamera, Mode CPU otomatis `core/hardware.py`):** Intel Core i5 Gen 10+ / AMD Ryzen 5 (4–8 physical core), RAM 8–16 GB, SSD 256 GB (sisakan min. 30–50 GB kosong).
+   - **Rekomendasi Produksi 24/7 (Stabil untuk 1–2+ Kamera / Akurasi `640p` penuh):** PC Desktop / Mini-PC dengan **GPU NVIDIA min. GTX 1650 / RTX 3050 (VRAM 4–6 GB+)**, CPU Core i5 / Ryzen 5, RAM 16 GB, SSD 256–512 GB.
+   - **Perangkat Pendukung Wajib di Pabrik:**
+     - **UPS (600–1000 VA)** untuk PC + Switch/NVR agar aman saat listrik kedip dan `power_watchdog` sempat mencatat padam.
+     - **Kabel LAN Cat5e/Cat6** antara CCTV/XVR dan Mini-PC (jangan andalkan Wi-Fi untuk stream 24/7).
+     - **Kamera CCTV IP / XVR dengan RTSP H.264** menghadap stabil ke papan loading + penerangan cukup saat malam.
+     - **Internet Cabang** min. 5–10 Mbps (cukup karena hanya upload teks DB & klip 10 detik saat ada alarm).
+2. **Kantor Pusat (Hosting Dashboard Gabungan Semua Cabang):**
+   - **Tidak perlu GPU.** Cukup 1 layanan **Database Cloud (Supabase / PostgreSQL)** + 1 **VPS / Cloud Web Hosting ringan (2 vCPU, 2–4 GB RAM)** untuk menayangkan dashboard rekap seluruh cabang Indonesia.
