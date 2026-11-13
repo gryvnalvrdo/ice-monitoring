@@ -40,7 +40,8 @@ Tujuan: menghitung kantong es yang dimuat ke truk lewat CCTV secara real-time 24
 - `weights/`: bobot model YOLO (`yolo_ice_best.pt`, `yolov8n.pt`).
 - `dataset/yolo_ice/`: dataset gambar & label YOLO (`images/`, `labels/`, `dataset.yaml`).
 - `data/`: `sessions.db`, `evidence/`, `snapshots/`, `logs/`, `gt_audit/`.
-- `tests/`: unit test (`tests/test_state_machine.py`).
+- `web/`: antarmuka login & web dashboard (`login.html`, `login.js`, `dashboard.html`, `dashboard.js`, `styles.css`).
+- `tests/`: unit test (`tests/test_state_machine.py`, `tests/test_web_security.py`).
 
 ## Tujuan proyek & aturan domain (dikonfirmasi user, 13 Nov 2026)
 Tujuan utama: mendeteksi dan menghitung bungkusan es yang di-loading ke truk secara real-time, dengan mempertimbangkan anomali yang bisa terjadi. Hitungan harus lengkap (recall tinggi) dan alarm harus jarang palsu.

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pantau Muat Es Pabrik</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/dashboard.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="topbar-left">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L20 6.5V17.5L12 22L4 17.5V6.5L12 2Z"></path>
+            <path d="M12 22V12"></path>
+            <path d="M20 6.5L12 12L4 6.5"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="topbar-title">Pantau Muat Es Pabrik</h1>
+          <div id="branch-label" class="topbar-meta">Cabang Makassar • Menunggu data...</div>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <div class="cam-tabs" role="tablist" aria-label="Pilih Kamera">
+          <button id="tab-cam3" class="cam-tab" type="button" data-cam="cam3">Kamera 3</button>
+          <button id="tab-cam10" class="cam-tab" type="button" data-cam="cam10">Kamera 10</button>
+        </div>
+        <span id="hdr-status-pill" class="pill"><span class="dot"></span><span>Memuat...</span></span>
+        <span id="hdr-clock" class="pill tabular">--:--:--</span>
+        <span id="hdr-user" class="pill">Pengguna</span>
+        <button id="btn-logout" class="btn btn-outline btn-sm" type="button">Keluar</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="honest-banner" class="status-banner alert-warn hidden" role="status">
+      <div>
+        <strong id="banner-title">Pemantauan Sedang Berhenti</strong>
+        <div id="banner-desc" class="status-banner-sub">Angka hitungan di bawah tidak sedang bertambah secara langsung.</div>
+      </div>
+      <div id="banner-time" class="status-banner-sub tabular"></div>
+    </section>
+
+    <section class="hero-grid">
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Pantauan Kamera Langsung</h2>
+            <div id="camera-subtitle" class="card-subtitle">Kamera 3 — Papan Loading Utama</div>
+          </div>
+          <div class="table-tools">
+            <span id="source-kind-badge" class="pill">Standby</span>
+            <button id="btn-zoom-cctv" class="btn btn-outline btn-sm hidden" type="button">Perbesar Layar</button>
+          </div>
+        </div>
+
+        <div class="cctv-frame">
+          <img id="cctv-live-img" class="cctv-img hidden" alt="Tampilan Video CCTV Loading Es">
+          <div id="cctv-standby-box" class="cctv-standby">
+            <h3>Kamera Sedang Standby (Belum Memantau)</h3>
+            <p id="standby-hint">Pemantauan otomatis hanya berjalan saat tombol Mulai ditekan oleh Admin.</p>
+          </div>
+        </div>
+
+        <div class="cctv-toolbar">
+          <span id="last-update-label" class="card-subtitle tabular">Terakhir update: -</span>
+          <span id="tamper-label" class="pill pill-ok">Posisi Kamera Normal</span>
+        </div>
+
+        <div id="admin-panel" class="admin-controls hidden">
+          <div class="card-subtitle"><strong>Pengaturan Kamera (Khusus Admin)</strong></div>
+          <div class="admin-row">
+            <select id="admin-source-select" aria-label="Pilih sumber video kamera"></select>
+            <input id="admin-start-min" type="number" min="0" max="300" step="0.5" value="0" title="Menit awal untuk video rekaman">
+            <button id="btn-start-engine" class="btn btn-primary btn-sm" type="button">Mulai Pemantauan</button>
+            <button id="btn-stop-engine" class="btn btn-danger btn-sm hidden" type="button">Hentikan Pemantauan</button>
+          </div>
+          <div id="admin-feedback" class="alert-box hidden"></div>
+          <div id="sim-panel" class="admin-row hidden">
+            <span class="card-subtitle">Uji Coba Alarm:</span>
+            <button id="btn-sim-recovered" class="btn btn-outline btn-sm" type="button">Simulasi Batal Otomatis</button>
+            <button id="btn-sim-theft" class="btn btn-outline btn-sm" type="button">Simulasi Pencurian</button>
+            <button id="btn-sim-power" class="btn btn-outline btn-sm" type="button">Simulasi Listrik Pulih</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="card active-truck-card">
+        <div>
+          <div class="card-header">
+            <h2 class="card-title">
+              <span>Sedang Dimuat Sekarang</span>
+              <button class="help-btn" type="button" data-help-title="Hitungan Truk Aktif" data-help-body="Angka besar ini khusus menghitung kantong es untuk 1 truk yang sedang berdiri di depan papan loading sekarang. Begitu truk berangkat dan truk baru masuk, hitungan ini otomatis mulai dari 0 lagi.">?</button>
+            </h2>
+            <span class="pill">KHUSUS TRUK AKTIF</span>
+          </div>
+
+          <div class="truck-header-box">
+            <div>
+              <div class="counter-label">Truk di Area Muat</div>
+              <div id="active-truck-name" class="truck-plate">Menunggu Truk Masuk...</div>
+            </div>
+            <div style="text-align: right;">
+              <div id="active-trip-num" class="truck-trip">Trip #-</div>
+            </div>
+          </div>
+
+          <div class="counter-hero" style="margin-top: 12px;">
+            <div class="counter-total-box">
+              <div class="counter-label">Total Muatan Truk Ini</div>
+              <div id="active-total" class="counter-big tabular">0</div>
+              <div class="counter-unit">kantong es</div>
+            </div>
+            <div class="counter-split">
+              <div class="counter-sub-box">
+                <span class="counter-label">Es Besar</span>
+                <span id="active-large" class="counter-sub-num tabular">0</span>
+              </div>
+              <div class="counter-sub-box">
+                <span class="counter-label">Es Kecil</span>
+                <span id="active-small" class="counter-sub-num tabular">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="security-status-box" class="security-box alert-ok">
+          <div class="security-title">
+            <span id="security-status-title">AMAN — Semua Es Masuk ke Truk</span>
+            <button class="help-btn" type="button" data-help-title="Arti 3 Status Keamanan" data-help-body="HIJAU (Aman): semua es masuk ke truk. KUNING (Sedang Dipantau): es tergeser ke samping papan, sistem menunggu sebentar—jika pekerja memasukkan kembali es ke truk, status kembali hijau tanpa alarm. MERAH (Alarm Pencurian): es hilang atau lama tertinggal di samping dan tidak masuk truk.">?</button>
+          </div>
+          <div id="security-status-desc" class="security-desc">Tidak ada es yang keluar ke samping atau tertinggal di luar truk.</div>
+        </div>
+
+        <div class="last-event-line">
+          <span id="active-last-event">Menunggu aktivitas pemuatan...</span>
+          <span id="active-last-event-time" class="tabular">--:--:--</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="rekap-section">
+      <div class="rekap-header">
+        <div class="card-title">
+          <span>Rekap Gabungan Semua Truk</span>
+          <button class="help-btn" type="button" data-help-title="Bedanya dengan Truk Aktif" data-help-body="Bagian ini menjumlahkan seluruh truk yang sudah dimuat pada tanggal yang dipilih. Kejadian 'Batal Otomatis' dipisahkan di kotak kanan agar tidak dikira sebagai pencurian.">?</button>
+        </div>
+        <div class="date-controls">
+          <button id="btn-date-today" class="btn btn-outline btn-sm" type="button">Hari Ini</button>
+          <button id="btn-date-yesterday" class="btn btn-outline btn-sm" type="button">Kemarin</button>
+          <input id="date-filter" class="form-input" style="width: auto; min-height: 36px; padding: 4px 10px;" type="date" aria-label="Pilih tanggal rekap">
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Jumlah Truk Muat</div>
+          <div id="kpi-trucks" class="kpi-value tabular">0</div>
+          <div id="kpi-trips" class="kpi-foot">0 kali pengisian</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Total Semua Kantong Es</div>
+          <div id="kpi-grand-total" class="kpi-value tabular">0</div>
+          <div id="kpi-split-detail" class="kpi-foot">Besar: 0 | Kecil: 0</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Alarm Pencurian</div>
+          <div id="kpi-theft" class="kpi-value tabular" style="color: var(--danger-text);">0</div>
+          <div class="kpi-foot">Hanya es tidak masuk truk</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">
+            <span>Batal Otomatis</span>
+            <button class="help-btn" type="button" data-help-title="Apa Itu Batal Otomatis?" data-help-body="Ketika kantong es sempat tergeser ke samping papan, lalu pekerja mengambil dan memasukkannya lagi ke truk. Sistem otomatis membatalkan kecurigaan dan tetap menghitung es tersebut. Bukan pencurian.">?</button>
+          </div>
+          <div id="kpi-recovered" class="kpi-value tabular" style="color: var(--ok-text);">0</div>
+          <div class="kpi-foot">Es samping kembali ke truk</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Foto Hitungan Terakhir</h2>
+          <div class="card-subtitle">Klik foto untuk melihat lebih jelas kantong es yang baru masuk truk dan alasannya terhitung.</div>
+        </div>
+        <span id="snapshot-count-pill" class="pill tabular">0 foto baru</span>
+      </div>
+      <div id="snapshot-strip" class="snapshot-strip">
+        <div class="empty-msg">Belum ada foto hitungan pada sesi ini.</div>
+      </div>
+    </section>
+
+    <section class="bottom-grid">
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Catatan Peringatan &amp; Kejadian</h2>
+            <div class="card-subtitle">Pencurian, kendala kamera, dan pembatalan otomatis dipisah jelas.</div>
+          </div>
+        </div>
+        <div class="filter-pills" style="margin-bottom: 12px;">
+          <button class="filter-pill active" type="button" data-inc-filter="all">Semua</button>
+          <button class="filter-pill" type="button" data-inc-filter="theft">Pencurian</button>
+          <button class="filter-pill" type="button" data-inc-filter="camera">Masalah Kamera</button>
+          <button class="filter-pill" type="button" data-inc-filter="recovered">Batal Otomatis</button>
+        </div>
+        <div id="incident-list" class="incident-list">
+          <div class="empty-msg">Aman. Belum ada peringatan atau kejadian tercatat pada tanggal ini.</div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Riwayat Pengiriman Truk</h2>
+            <div class="card-subtitle">Klik baris truk untuk membuka rincian jalur masuk es dan durasi muat.</div>
+          </div>
+          <div class="table-tools">
+            <input id="truck-search" class="form-input" style="width: 170px; min-height: 36px; padding: 6px 10px;" type="search" placeholder="Cari nomor truk...">
+            <button id="btn-export-csv" class="btn btn-outline btn-sm" type="button">Unduh Laporan (CSV)</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Jam Mulai</th>
+                <th>Truk / Trip</th>
+                <th>Es Besar</th>
+                <th>Es Kecil</th>
+                <th>Total</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="trips-tbody"></tbody>
+          </table>
+          <div id="trips-empty" class="empty-msg hidden">Belum ada riwayat truk pada tanggal yang dipilih.</div>
+        </div>
+      </article>
+    </section>
+
+    <footer class="footer-strip">
+      <span id="footer-storage">Ruang Penyimpanan Bukti: Memeriksa...</span>
+      <span id="footer-cloud">Cadangan Data Cloud: Memeriksa...</span>
+    </footer>
+  </main>
+
+  <div id="modal-backdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="modal-title" class="modal-title">Detail</h3>
+        <button id="modal-close" class="btn btn-outline btn-sm" type="button">Tutup</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+</body>
+</html>
+

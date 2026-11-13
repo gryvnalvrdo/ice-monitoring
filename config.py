@@ -152,8 +152,9 @@ API_SECRET_KEY = os.getenv("API_SECRET_KEY", "")
 REQUIRE_API_KEY = os.getenv("REQUIRE_API_KEY", "True").lower() in ("true", "1")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",") if o.strip()]
 
-MAX_DISK_USAGE_PERCENT = 85.0
-EVIDENCE_RETENTION_DAYS = 30
+MAX_DISK_USAGE_PERCENT = float(os.getenv("MAX_DISK_USAGE_PERCENT", "85.0"))
+EVIDENCE_RETENTION_DAYS = int(os.getenv("EVIDENCE_RETENTION_DAYS", "30"))
+SNAPSHOT_RETENTION_DAYS = int(os.getenv("SNAPSHOT_RETENTION_DAYS", "7"))
 TAMPERING_GUARD_ENABLED = True
 AUTO_HARDWARE_DETECTION = True
 
@@ -175,3 +176,17 @@ CLOUD_SYNC_INTERVAL_SEC = int(os.getenv("CLOUD_SYNC_INTERVAL_SEC", "10"))
 
 LOG_DIR = "data/logs"
 LOG_LEVEL = "INFO"
+
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH", "")
+OPERATOR_USERNAME = os.getenv("OPERATOR_USERNAME", "operator")
+OPERATOR_PASSWORD = os.getenv("OPERATOR_PASSWORD", "")
+OPERATOR_PASSWORD_HASH = os.getenv("OPERATOR_PASSWORD_HASH", "")
+SESSION_TTL_MINUTES = int(os.getenv("SESSION_TTL_MINUTES", "480"))
+SESSION_IDLE_MINUTES = int(os.getenv("SESSION_IDLE_MINUTES", "60"))
+LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_LOCKOUT_SECONDS = int(os.getenv("LOGIN_LOCKOUT_SECONDS", "300"))
+ALLOW_SIMULATION = os.getenv("ALLOW_SIMULATION", "False").lower() in ("true", "1")
+DISABLE_API_DOCS = os.getenv("DISABLE_API_DOCS", "True").lower() in ("true", "1")
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "False").lower() in ("true", "1")

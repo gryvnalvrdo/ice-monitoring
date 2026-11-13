@@ -36,6 +36,7 @@ class PureYOLOPackageDetector:
         self.tracker_history = {}
         self.last_seen_frame = {}
         self.active_objects = {}
+        self.track_trajectories = {}
 
         self.tripwire_flash = 0
         self.last_counted_frame = -999
@@ -66,6 +67,8 @@ class PureYOLOPackageDetector:
         self.tracker_history.clear()
         self.last_seen_frame.clear()
         self.active_objects.clear()
+        if hasattr(self, "track_trajectories"):
+            self.track_trajectories.clear()
         self.last_counted_frame = -999
         self._frame_counter = 0
         logger.info("[PURE-YOLO] Counter direset untuk sesi baru.")
@@ -85,6 +88,8 @@ class PureYOLOPackageDetector:
                 self.tracker_history[track_id] = []
 
         self.tracker_history[track_id].append((cx, cy))
+        if len(self.tracker_history[track_id]) > 180:
+            self.tracker_history[track_id] = [self.tracker_history[track_id][0]] + self.tracker_history[track_id][-179:]
         self.last_seen_frame[track_id] = self._frame_counter
         hist = self.tracker_history[track_id]
 
@@ -150,6 +155,11 @@ class PureYOLOPackageDetector:
             self.last_counted_frame = self._frame_counter
             self.counted_ids.add(track_id)
             self.counted_at_frame[track_id] = (self._frame_counter, cy)
+            if not hasattr(self, "track_trajectories"):
+                self.track_trajectories = {}
+            self.track_trajectories[track_id] = (
+                "papan" if chute_crossing else "samping_kembali" if from_side_to_truck else "lempar_langsung"
+            )
             return True
 
         return False
@@ -262,6 +272,7 @@ class PureYOLOPackageDetector:
                     self.tripwire_flash = 8
 
                     crop = frame[max(0, y1):min(fh, y2), max(0, x1):min(fw, x2)].copy()
+                    traj = self.track_trajectories.get(track_id, "papan") if hasattr(self, "track_trajectories") else "papan"
                     events.append({
                         'size': size,
                         'area': area,
@@ -269,7 +280,8 @@ class PureYOLOPackageDetector:
                         'track_id': track_id,
                         'conf': conf,
                         'quantity': qty,
-                        'is_stacked': is_stacked
+                        'is_stacked': is_stacked,
+                        'trajectory': traj
                     })
                     logger.info(
                         f"[PURE-YOLO COUNT] {size.upper()} (x{qty}) #{track_id} terhitung | "
@@ -281,6 +293,10 @@ class PureYOLOPackageDetector:
             stale_ids = [tid for tid in self.tracker_history if tid not in active_track_ids]
             for tid in stale_ids[:100]:
                 del self.tracker_history[tid]
+                self.last_seen_frame.pop(tid, None)
+                self.counted_at_frame.pop(tid, None)
+                if hasattr(self, "track_trajectories"):
+                    self.track_trajectories.pop(tid, None)
 
         line_col = config.TRIPWIRE_COLOR_ACTIVE if self.tripwire_flash > 0 else config.TRIPWIRE_COLOR_IDLE
         rx, ry, rw, rh = config.ROI

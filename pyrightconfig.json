@@ -1,0 +1,7 @@
+{
+  "include": ["config.py", "server.py", "core", "services", "scripts", "tests"],
+  "exclude": ["dataset", "runs", "scratch", "weights", "videos", "data", "**/__pycache__"],
+  "extraPaths": [".", "core", "services", "scripts"],
+  "pythonVersion": "3.10"
+}
+

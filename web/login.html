@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Masuk — Pantau Muat Es Pabrik</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/login.js" defer></script>
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <div class="login-brand">
+      <div class="brand-icon" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L20 6.5V17.5L12 22L4 17.5V6.5L12 2Z"></path>
+          <path d="M12 22V12"></path>
+          <path d="M20 6.5L12 12L4 6.5"></path>
+        </svg>
+      </div>
+      <div>
+        <h1 class="login-title">Pantau Muat Es Pabrik</h1>
+        <p class="login-sub">Masuk untuk melihat kamera CCTV dan hitungan truk</p>
+      </div>
+    </div>
+
+    <div id="login-error" class="alert-box alert-danger hidden" role="alert"></div>
+
+    <form id="login-form" autocomplete="on">
+      <div class="form-group">
+        <label class="form-label" for="username">Nama Pengguna</label>
+        <input class="form-input" id="username" name="username" type="text" placeholder="contoh: admin atau operator" required autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password">Kata Sandi</label>
+        <input class="form-input" id="password" name="password" type="password" placeholder="Masukkan kata sandi" required>
+      </div>
+      <button id="login-btn" class="btn btn-primary btn-full" type="submit">Masuk ke Dashboard</button>
+    </form>
+
+    <p class="topbar-meta" style="margin-top: 16px; text-align: center;">
+      Gunakan akun <strong>Admin</strong> untuk mengatur kamera, atau <strong>Operator</strong> untuk memantau saja.
+    </p>
+  </main>
+</body>
+</html>
+

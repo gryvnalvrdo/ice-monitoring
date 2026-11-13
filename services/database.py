@@ -356,13 +356,16 @@ def get_daily_summary(city: str = DEFAULT_CITY, target_date: str = None) -> dict
     summary['trips'] = [dict(r) for r in cur.fetchall()]
 
     cur.execute("""
-        SELECT a.*, s.truck_id, s.trip_number
+        SELECT a.*, COALESCE(s.truck_id, '-') as truck_id, COALESCE(s.trip_number, 0) as trip_number
         FROM anomalies a
-        JOIN sessions s ON a.session_id = s.id
-        WHERE (s.city = ? OR s.city IS NULL)
-          AND (s.trip_date = ? OR s.start_time LIKE ?)
+        LEFT JOIN sessions s ON a.session_id = s.id
+        WHERE (COALESCE(s.city, a.city) = ? OR COALESCE(s.city, a.city) IS NULL)
+          AND (
+              (s.id IS NOT NULL AND (s.trip_date = ? OR s.start_time LIKE ?))
+              OR (s.id IS NULL AND a.timestamp LIKE ?)
+          )
         ORDER BY a.id DESC
-    """, (city, target_date, f"{target_date}%"))
+    """, (city, target_date, f"{target_date}%", f"{target_date}%"))
     summary['anomalies'] = [dict(r) for r in cur.fetchall()]
 
     conn.close()
@@ -373,17 +376,17 @@ def get_anomalies(session_id: int = None, limit: int = 50) -> list:
     cur = conn.cursor()
     if session_id:
         cur.execute("""
-            SELECT a.*, s.truck_id, s.trip_number, s.city
+            SELECT a.*, COALESCE(s.truck_id, '-') as truck_id, COALESCE(s.trip_number, 0) as trip_number, COALESCE(s.city, a.city) as city
             FROM anomalies a
-            JOIN sessions s ON a.session_id = s.id
+            LEFT JOIN sessions s ON a.session_id = s.id
             WHERE a.session_id = ?
             ORDER BY a.id DESC LIMIT ?
         """, (session_id, limit))
     else:
         cur.execute("""
-            SELECT a.*, s.truck_id, s.trip_number, s.city
+            SELECT a.*, COALESCE(s.truck_id, '-') as truck_id, COALESCE(s.trip_number, 0) as trip_number, COALESCE(s.city, a.city) as city
             FROM anomalies a
-            JOIN sessions s ON a.session_id = s.id
+            LEFT JOIN sessions s ON a.session_id = s.id
             ORDER BY a.id DESC LIMIT ?
         """, (limit,))
     rows = [dict(r) for r in cur.fetchall()]

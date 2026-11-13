@@ -94,11 +94,13 @@ class CloudSyncManager:
 
             cur.execute("SELECT * FROM sessions ORDER BY id DESC LIMIT 50")
             recent_sessions = [dict(r) for r in cur.fetchall()]
+            pushed_session_ids = set()
 
             if recent_sessions:
                 success = self._push_to_supabase("sessions", recent_sessions)
                 if success:
                     synced_sessions = len(recent_sessions)
+                    pushed_session_ids = {s['id'] for s in recent_sessions if s.get('id') is not None}
 
             cur.execute("""
                 SELECT * FROM anomalies
@@ -111,6 +113,22 @@ class CloudSyncManager:
             recent_anomalies = [dict(r) for r in cur.fetchall()]
 
             if recent_anomalies:
+                needed_ids = {
+                    a['session_id'] for a in recent_anomalies
+                    if a.get('session_id') is not None and a['session_id'] not in pushed_session_ids
+                }
+                existing_ids = set(pushed_session_ids)
+                if needed_ids:
+                    placeholders = ",".join("?" for _ in needed_ids)
+                    cur.execute(f"SELECT * FROM sessions WHERE id IN ({placeholders})", tuple(needed_ids))
+                    extra_sessions = [dict(r) for r in cur.fetchall()]
+                    if extra_sessions and self._push_to_supabase("sessions", extra_sessions):
+                        existing_ids.update(s['id'] for s in extra_sessions if s.get('id') is not None)
+
+                for a in recent_anomalies:
+                    if a.get('session_id') not in existing_ids:
+                        a['session_id'] = None
+
                 success = self._push_to_supabase("anomalies", recent_anomalies)
                 if success:
                     synced_anomalies = len(recent_anomalies)

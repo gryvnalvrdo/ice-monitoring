@@ -12,9 +12,11 @@ class EvidenceRecorder:
     def __init__(self, output_dir: str = "data/evidence",
                  fps: float = 10.0,
                  pre_seconds: float = 5.0,
-                 post_seconds: float = 5.0):
+                 post_seconds: float = 5.0,
+                 max_width: int = 960):
         self.output_dir = output_dir
         self.fps = fps
+        self.max_width = max_width
         self.pre_frames_count = int(pre_seconds * fps)
         self.post_frames_count = int(post_seconds * fps)
         self.ring_buffer = deque(maxlen=self.pre_frames_count)
@@ -22,14 +24,22 @@ class EvidenceRecorder:
         self._lock = threading.Lock()
         os.makedirs(self.output_dir, exist_ok=True)
 
+    def _prep_frame(self, frame):
+        fh, fw = frame.shape[:2]
+        if self.max_width and fw > self.max_width:
+            scale = self.max_width / float(fw)
+            return cv2.resize(frame, (self.max_width, max(1, int(fh * scale))), interpolation=cv2.INTER_AREA)
+        return frame.copy()
+
     def add_frame(self, frame, frame_idx: int):
+        small = self._prep_frame(frame)
         with self._lock:
 
-            self.ring_buffer.append((frame_idx, frame.copy()))
+            self.ring_buffer.append((frame_idx, small))
 
             remaining_recordings = []
             for rec in self.active_recordings:
-                rec['frames'].append(frame.copy())
+                rec['frames'].append(small.copy())
                 rec['remaining_post_frames'] -= 1
                 if rec['remaining_post_frames'] <= 0:
 

@@ -1,7 +1,10 @@
+import os
 import cv2
 import numpy as np
 import logging
 import time
+import threading
+from collections import deque
 from datetime import datetime
 
 import config
@@ -45,10 +48,17 @@ class IceDetectionEngine:
 
         self.unloaded_objects = set()
 
+        self._frame_lock = threading.Lock()
+        self._latest_jpeg = None
+        self.recent_counts = deque(maxlen=15)
+        self.recent_recoveries = deque(maxlen=10)
+        os.makedirs(config.SNAPSHOT_DIR, exist_ok=True)
+
         self.telemetry = {
             'is_running': False,
             'fps': 0.0,
             'frame_idx': 0,
+            'camera_profile': getattr(config, 'CAMERA_PROFILE', 'cam3'),
             'truck_present': False,
             'truck_id': "-",
             'trip_number': 1,
@@ -57,13 +67,17 @@ class IceDetectionEngine:
             'count_small': 0,
             'count_total': 0,
             'active_anomalies_count': 0,
+            'pending_side_count': 0,
             'last_event': "Sistem siap",
             'last_event_time': time.strftime("%H:%M:%S"),
+            'last_active_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'stream_status': 'IDLE',
             'tamper_status': 'NORMAL',
             'disk_free_gb': 0.0,
             'hardware_device': hardware.get_device(),
             'hardware_name': hardware.hardware_info['device_name'],
+            'recent_counts': [],
+            'recent_recoveries': [],
         }
 
     def start_session(self, truck_id: str, truck_raw: str):
@@ -72,7 +86,7 @@ class IceDetectionEngine:
         self.detector.reset_counts()
         self.pending_side_objects.clear()
         self.unloaded_objects.clear()
-        self._update_telemetry(active_anomalies_count=0)
+        self._update_telemetry(active_anomalies_count=0, pending_side_count=0)
 
         self.current_session_id = database.create_session(
             truck_id=truck_id,
@@ -136,6 +150,7 @@ class IceDetectionEngine:
             ar = ev['area']
             qty = ev.get('quantity', 1)
             is_stk = ev.get('is_stacked', False)
+            traj = ev.get('trajectory', 'papan')
 
             if self.current_session_id:
                 for _ in range(qty):
@@ -144,21 +159,47 @@ class IceDetectionEngine:
                         size=sz,
                         area_px=int(ar),
                         frame_idx=self.frame_idx,
-                        trajectory="chute",
+                        trajectory=traj,
                         direction="in"
                     )
 
-            last_msg = f"🧊🧊 2 Es Bertumpuk masuk bak truk" if is_stk else f"Es {sz.upper()} masuk bak truk"
+            snap_file = self._save_count_snapshot(ev.get('crop'), ev.get('track_id', 0))
+            traj_label = (
+                "Lewat Papan" if traj == "papan"
+                else "Kembali dari Samping" if traj == "samping_kembali"
+                else "Lempar Langsung"
+            )
+            sz_label = "Es Besar" if sz == "large" else "Es Kecil"
+            if hasattr(self, "recent_counts"):
+                self.recent_counts.appendleft({
+                    'time': datetime.now().strftime("%H:%M:%S"),
+                    'size': sz,
+                    'size_label': sz_label,
+                    'quantity': qty,
+                    'is_stacked': is_stk,
+                    'trajectory': traj,
+                    'trajectory_label': traj_label,
+                    'snapshot': snap_file,
+                    'truck_id': self.current_truck_id or "-"
+                })
+
+            last_msg = f"2 Es Bertumpuk masuk bak truk" if is_stk else f"{sz_label} masuk bak truk"
             self._update_telemetry(
                 count_large=self.detector.total_large,
                 count_small=self.detector.total_small,
                 count_total=self.detector.total,
-                last_event=last_msg
+                last_event=last_msg,
+                recent_counts=list(self.recent_counts) if hasattr(self, "recent_counts") else []
             )
 
         self._check_side_exit_and_anomalies(frame)
 
         self._draw_engine_hud(processed_frame)
+        self.set_latest_frame(processed_frame)
+        self._update_telemetry(
+            camera_profile=getattr(config, 'CAMERA_PROFILE', 'cam3'),
+            frame_idx=self.frame_idx
+        )
 
         return processed_frame, events
 
@@ -230,8 +271,16 @@ class IceDetectionEngine:
                     )
                     if p_info['anomaly_id']:
                         database.delete_anomaly(p_info['anomaly_id'])
+                    if hasattr(self, "recent_recoveries"):
+                        self.recent_recoveries.appendleft({
+                            'time': datetime.now().strftime("%H:%M:%S"),
+                            'side': p_info['side'],
+                            'truck_id': self.current_truck_id or "-",
+                            'message': f"Es dari samping {p_info['side']} masuk kembali ke truk (Batal Otomatis)"
+                        })
                     self._update_telemetry(
-                        last_event="Es samping kembali masuk bak (False Alarm dihindari)"
+                        last_event="Es samping kembali masuk bak (False Alarm dihindari)",
+                        recent_recoveries=list(self.recent_recoveries) if hasattr(self, "recent_recoveries") else []
                     )
                     del self.pending_side_objects[recovered_key]
 
@@ -250,6 +299,7 @@ class IceDetectionEngine:
         for obj_id, p, reason in expired:
             self._handle_confirmed_theft(obj_id, p, reason)
             self.pending_side_objects.pop(obj_id, None)
+        self._update_telemetry(pending_side_count=len(self.pending_side_objects))
 
     def _nearest_pending(self, pos, radius, exclude=(), must_be_lost=False,
                          obj_id=None):
@@ -421,10 +471,48 @@ class IceDetectionEngine:
             }
         )
 
+    def _save_count_snapshot(self, crop: np.ndarray, track_id: int) -> str:
+        if not getattr(config, "SAVE_SNAPSHOTS", True) or crop is None or crop.size == 0:
+            return ""
+        fname = f"es_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{self.frame_idx}_{track_id}.jpg"
+        fpath = os.path.join(config.SNAPSHOT_DIR, fname)
+        try:
+            os.makedirs(config.SNAPSHOT_DIR, exist_ok=True)
+            ok = cv2.imwrite(fpath, crop, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            return fname if ok else ""
+        except Exception as e:
+            logger.error(f"[SNAPSHOT] Gagal simpan foto hitungan: {e}")
+            return ""
+
+    def set_latest_frame(self, frame: np.ndarray):
+        if frame is None:
+            return
+        try:
+            fh, fw = frame.shape[:2]
+            if fw > 900:
+                scale = 900.0 / fw
+                frame_small = cv2.resize(frame, (900, int(fh * scale)), interpolation=cv2.INTER_AREA)
+            else:
+                frame_small = frame
+            ok, buf = cv2.imencode(".jpg", frame_small, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            if ok:
+                with self._frame_lock:
+                    self._latest_jpeg = buf.tobytes()
+        except Exception:
+            pass
+
+    def get_latest_jpeg(self) -> bytes | None:
+        lock = getattr(self, "_frame_lock", None)
+        if lock is None:
+            return None
+        with lock:
+            return self._latest_jpeg
+
     def _update_telemetry(self, **kwargs):
         for k, v in kwargs.items():
             self.telemetry[k] = v
         self.telemetry['last_event_time'] = time.strftime("%H:%M:%S")
+        self.telemetry['last_active_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def _draw_engine_hud(self, frame: np.ndarray):
         fh, fw = frame.shape[:2]
