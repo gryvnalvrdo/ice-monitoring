@@ -1,22 +1,34 @@
-﻿---
+---
 name: ice-production-safety
 description: Checklist keamanan web, rahasia, pencegahan error/crash, dan keandalan 24/7 untuk sistem monitoring es (XSS, SSRF, auth, RTSP hang, VRAM OOM, SQLite lock, multi-kamera). Gunakan sebelum deploy ke pabrik atau saat mengubah server/security/config/dashboard.
 ---
 
 # Keamanan Web, Pencegahan Crash & Keandalan Produksi 24/7
 
-## 1. Keamanan Web Dashboard & API
-- **Anti-XSS di Dashboard:** DILARANG memasukkan data dinamis (`truck_id`, `details`, `last_event`, URL kamera, nama file) ke `innerHTML`. Wajib gunakan `textContent` / DOM API (`createElement`) agar tidak ada injeksi skrip dari input/DB.
-- **Autentikasi & Eksposur Jaringan:**
-  - `REQUIRE_API_KEY=true`, `API_SECRET_KEY` acak kuat di `.env`, `CORS_ORIGINS` spesifik.
-  - Default `API_HOST=127.0.0.1`. Jika perlu diakses lewat LAN/internet (`0.0.0.0`), wajib pasang reverse proxy HTTPS + autentikasi untuk feed kamera, bukti video (`/api/evidence`), riwayat (`/api/trips`, `/api/anomalies`), dan `/ws/telemetry`.
-  - Pisahkan mode **Pantau (Read-Only)** vs **Kontrol Admin**; semua endpoint POST/ubah state wajib `Depends(verify_api_key)` + rate limit (termasuk rate limit percobaan API key salah).
-- **Cegah SSRF & Path Traversal pada Input Sumber Video:**
-  - `source` di `/api/engine/start` hanya boleh berupa URL `rtsp://` yang valid atau path file yang setelah `.resolve()` berada di dalam folder `videos/`. Tolak `..`, skema `file://`, atau URL HTTP ke IP internal metadata/layanan lokal.
+## 1. Keamanan Web Dashboard, Login & API
+- **Blokir Akses Ketik URL Langsung (Anti-Forced Browsing & Anti-GET Action):**
+  - Semua halaman internal, API data (`/api/overview`, `/api/trips`, `/api/anomalies`), video bukti (`/api/evidence/*`), stream CCTV, dan WebSocket (`/ws/telemetry`) WAJIB menolak akses tanpa sesi login yang sah (`401` untuk API/WS atau redirect ke halaman `/login` untuk halaman web). Jangan biarkan file/video bisa diunduh hanya bermodal menebak URL di address bar.
+  - Aksi pengubah sistem (start/stop kamera, ubah setting, logout) DILARANG menggunakan method `GET`; wajib `POST` agar tidak bisa dipicu dengan mengetik URL di browser atau lewat tag gambar/link.
+  - Matikan halaman dokumentasi API bawaan (`/docs`, `/redoc`, `/openapi.json`) di mode produksi agar daftar endpoint tidak terekspos ke pihak luar.
+- **Sistem Login Admin, Session, & Logout yang Aman:**
+  - **Password Hashing:** Password admin wajib disimpan dalam bentuk hash kuat ber-salt (`scrypt` / `bcrypt` / `argon2`, bukan teks biasa) di `.env` / DB dan dicocokkan dengan `hmac.compare_digest`.
+  - **Cookie Session Aman:** Gunakan token acak `HttpOnly` + `SameSite=Lax`/`Strict` (+ `Secure` jika HTTPS). Jangan pernah taruh session token atau API key di URL (`?token=...`) maupun `localStorage`.
+  - **Masa Berlaku & Logout Sejati:** Session wajib punya batas waktu aktif/idle timeout. Tombol **Logout** wajib menghapus sesi di sisi server (*session store* / blacklist) sekaligus memutus koneksi WebSocket/stream live, bukan hanya menghapus cookie di browser.
+  - **Anti-Back Button After Logout:** Kirim header `Cache-Control: no-store` pada halaman/API terproteksi agar menekan tombol Back browser setelah logout tidak memunculkan data lama.
+  - **Anti-Brute Force Login & Open Redirect:** Batasi percobaan login gagal (mis. maks 5x lalu kunci sementara), serta validasi target redirect pasca-login agar hanya boleh ke path internal `/...`.
+  - **Pemisahan Peran (RBAC) & Audit Log:** Pisahkan akun **Operator (Hanya Pantau)** dan **Admin (Kontrol Penuh)**. Setiap login, gagal login, logout, dan aksi mematikan kamera wajib dicatat di log/DB serta mengirim notifikasi Telegram jika kamera dimatikan.
+- **CSRF, Security Headers & Anti-XSS:**
+  - Setiap `POST/PUT/DELETE` yang memakai cookie session wajib verifikasi **CSRF token** dan `Origin`/`Referer`.
+  - Tambahkan header `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, dan `Content-Security-Policy` ketat (anti-clickjacking & anti-script luar).
+  - **Anti-XSS di Dashboard:** DILARANG memasukkan data dinamis (`truck_id`, `details`, `last_event`, URL kamera, nama file) ke `innerHTML`. Wajib gunakan `textContent` / DOM API (`createElement`).
+- **API Key, Cegah SSRF, Path Traversal & Command Injection:**
+  - `REQUIRE_API_KEY=true`, `API_SECRET_KEY` acak kuat di `.env`, `CORS_ORIGINS` spesifik, default `API_HOST=127.0.0.1` (jika LAN `0.0.0.0`, wajib reverse proxy HTTPS).
+  - `source` di `/api/engine/start` hanya boleh berupa URL `rtsp://` valid atau path file yang setelah `.resolve()` berada di dalam `videos/`. Tolak `..`, `file://`, atau HTTP ke IP internal.
+  - Jika memakai `ffmpeg` / subprocess untuk video bukti, jangan pernah oper input pengguna dengan `shell=True`.
 - **Lindungi Kredensial & Pesan Error:**
-  - RTSP URL sering berisi username & password (`rtsp://user:pass@ip...`). WAJIB di-masking (`rtsp://***@ip...`) sebelum dikirim ke UI, telemetri, API response, atau file log.
-  - Jangan pernah kembalikan stack trace Python atau path internal server ke response HTTP; tampilkan pesan ramah operator awam di UI dan simpan detail teknis hanya di log lokal.
-- **Matikan Endpoint Simulasi di Produksi:** Endpoint seperti `/api/engine/simulate_*` wajib diblokir jika `ALLOW_SIMULATION=false` agar tidak memicu alarm Telegram palsu atau mengotori database.
+  - Masking URL RTSP (`rtsp://***@ip...`) sebelum dikirim ke UI, telemetri, API, atau log.
+  - Jangan pernah kembalikan stack trace Python atau path internal ke client; tampilkan pesan ramah operator awam di UI.
+- **Matikan Endpoint Simulasi di Produksi:** Endpoint seperti `/api/engine/simulate_*` wajib diblokir jika `ALLOW_SIMULATION=false`.
 - **Integritas Bukti & Rahasia:** `.env` tidak boleh ter-commit. Hash SHA-256 bukti video (`data/evidence/`) disinkronkan ke cloud agar tidak bisa dimanipulasi lokal.
 
 ## 2. Pencegahan Error & Crash (Program Stability 24/7)
